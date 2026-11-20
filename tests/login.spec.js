@@ -1,40 +1,59 @@
-import{test, expect} from '@playwright/test'
-import { exec } from 'node:child_process';
-import { TIMEOUT } from 'node:dns';
-import { describe } from 'node:test';
+import { test, expect } from '@playwright/test';
+import { users, PASSWORD } from '../support/credentials';
 
-test.describe('Login',() =>{
-    test.beforeEach(async({page}) =>{
-        await page.goto('/')// vira https://www.saucedemo.com/
-    })
+test.describe('Login', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/'); // vira https://www.saucedemo.com/ por causa do baseURL
+  });
 
-
-    test('entra com usuario e senha', async({page}) => {
-    // await = esperar este passo terminar e ir para o proximo, page = pagina   
- 
-    await page.getByTestId('username').fill('standard_user');
-    await page.getByTestId('password').fill('secret_sauce');
+  test('entra com usuario e senha', async ({ page }) => {
+    await page.getByTestId('username').fill(users.standard);
+    await page.getByTestId('password').fill(PASSWORD);
     await page.getByTestId('login-button').click();
-    await expect(page).toHaveURL(/inventory/);
-    await expect(page.getByText('Products')).toBeVisible();
-    await expect(page.getByText('Sauce Labs Backpack')).toContainText('Backpack');
-    await expect(page.getByRole('button', {name:'Add to cart'})).toHaveCount(6);
+
+    // expect(...) espera sozinho (auto-waiting) até a condição ficar verdadeira
+    await expect(page).toHaveURL(/inventory\.html/);
+    await expect(page.getByTestId('title')).toHaveText('Products');
+    await expect(page.getByRole('button', { name: 'Add to cart' })).toHaveCount(6);
+  });
+
+  test('teste com o usuario lento', async ({ page }) => {
+    await page.getByTestId('username').fill(users.glitch);
+    await page.getByTestId('password').fill(PASSWORD);
+    await page.getByTestId('login-button').click();
+
+    // Este usuário demora para logar, então aumentamos o tempo de espera só aqui
+    await expect(page.getByTestId('title')).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('mostra mensagem para usuario bloqueado', async ({ page }) => {
+    await page.getByTestId('username').fill(users.locked);
+    await page.getByTestId('password').fill(PASSWORD);
+    await page.getByTestId('login-button').click();
+
+    // Atenção: sempre usar "await" antes do expect, senão a verificação não é esperada
+    await expect(page.getByTestId('error')).toBeVisible();
+    await expect(page.getByTestId('error')).toContainText('locked out');
+  });
+
+  // Mesmo teste repetido para vários dados de entrada (um test() para cada item da lista)
+  const casosDeErro = [
+    { nome: 'senha errada', usuario: users.standard, senha: 'secret', erro: 'do not match any user' },
+    { nome: 'usuario inexistente', usuario: 'standart_user', senha: PASSWORD, erro: 'do not match any user' },
+    { nome: 'campos vazios', usuario: '', senha: '', erro: 'Username is required' },
+    { nome: 'sem senha', usuario: users.standard, senha: '', erro: 'Password is required' },
+    { nome: 'sem usuario', usuario: '', senha: PASSWORD, erro: 'Username is required' },
+  ];
+
+  for (const caso of casosDeErro) {
+    test(`mostra erro de validacao: ${caso.nome}`, async ({ page }) => {
+      // Diferente do Cypress, fill('') aceita string vazia
+      await page.getByTestId('username').fill(caso.usuario);
+      await page.getByTestId('password').fill(caso.senha);
+      await page.getByTestId('login-button').click();
+
+      await expect(page.getByTestId('error')).toContainText(caso.erro);
+      await expect(page).not.toHaveURL(/inventory\.html/);
     });
-
-    test('teste com o usuario lento ', async({page}) =>{
-    
-    await page.getByTestId('username').fill('performance_glitch_user');
-    await page.getByTestId('password').fill('secret_sauce');
-    await page.getByTestId('login-button').click();
-    await expect(page.getByText('Products')).toBeVisible({timeout: 10000});
-    })
-
-    test('mostra mensagem para usuario bloqueado', async({page}) =>{
-    
-    await page.getByTestId('username').fill('locked_out_user');
-    await page.getByTestId('password').fill('secret_sauce');
-    await page.getByTestId('login-button').click();
-    expect(page.getByTestId('error')).toBeVisible();
-
-    })
+  }
 });
